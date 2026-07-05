@@ -4,10 +4,6 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.0"
     }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.0"
-    }
   }
   required_version = ">= 1.1.0"
 }
@@ -16,90 +12,28 @@ provider "azurerm" {
   features {}
 }
 
-data "azurerm_resource_group" "rg" {
-  name = "rg-aks-demo-prod"
+resource "azurerm_resource_group" "rg" {
+  name     = "rg-cc-app-prod"
+  location = "eastus2"
 }
 
-data "azurerm_kubernetes_cluster" "aks" {
-  name                = "aks-cluster-prod"
-  resource_group_name = data.azurerm_resource_group.rg.name
-}
+resource "azurerm_kubernetes_cluster" "cluster" {
+  name                = "cc-app-cluster-prod"
+  location            = "eastus2"
+  resource_group_name = azurerm_resource_group.rg.name
+  dns_prefix          = "ccappprod"
 
-provider "kubernetes" {
-  host                   = data.azurerm_kubernetes_cluster.aks.kube_config[0].host
-  cluster_ca_certificate = base64decode(data.azurerm_kubernetes_cluster.aks.kube_config[0].cluster_ca_certificate)
-  client_certificate     = base64decode(data.azurerm_kubernetes_cluster.aks.kube_config[0].client_certificate)
-  client_key             = base64decode(data.azurerm_kubernetes_cluster.aks.kube_config[0].client_key)
-}
-
-resource "kubernetes_deployment" "cc_app" {
-  metadata {
-    name = "cc-app"
-    labels = {
-      app = "cc-app"
-    }
+  default_node_pool {
+    name       = "default"
+    node_count = 2
+    vm_size    = "Standard_D2s_v7"
   }
 
-  spec {
-    replicas = 3
-
-    selector {
-      match_labels = {
-        app = "cc-app"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "cc-app"
-        }
-      }
-
-      spec {
-        container {
-          name  = "cc-app"
-          image = "jessieljuarez99/cc-app:latest"
-
-          port {
-            container_port = 4000
-          }
-
-          resources {
-            requests = {
-              cpu    = "250m"
-              memory = "256Mi"
-            }
-            limits = {
-              cpu    = "500m"
-              memory = "512Mi"
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-resource "kubernetes_service" "cc_app" {
-  metadata {
-    name = "cc-app"
+  identity {
+    type = "SystemAssigned"
   }
 
-  spec {
-    type = "LoadBalancer"
-
-    selector = {
-      app = "cc-app"
-    }
-
-    port {
-      port        = 80
-      target_port = 4000
-    }
+  tags = {
+    Environment = "Production"
   }
-}
-
-output "cc_app_external_ip" {
-  value = kubernetes_service.cc_app.status[0].load_balancer[0].ingress[0].ip
 }
